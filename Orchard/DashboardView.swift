@@ -43,28 +43,34 @@ struct DashboardView: View {
     @State private var tradeRequest: TradeRequest?
 
     var body: some View {
-        Group {
-            switch tab {
-            case .home:
-                NavigationStack {
-                    HomeView(onTrade: { tradeRequest = TradeRequest(kind: $0) }, onAutopilot: { tab = .plans })
-                        .stockDestination(onTrade: { tradeRequest = $0 })
+        // The bar sits below the content rather than over it, so every tab's
+        // last row stays reachable.
+        VStack(spacing: 0) {
+            Group {
+                switch tab {
+                case .home:
+                    NavigationStack {
+                        HomeView(onTrade: { tradeRequest = TradeRequest(kind: $0) }, onAutopilot: { tab = .plans })
+                            .stockDestination(onTrade: { tradeRequest = $0 })
+                    }
+                case .markets:
+                    NavigationStack {
+                        MarketsView()
+                            .stockDestination(onTrade: { tradeRequest = $0 })
+                    }
+                case .plans:
+                    PlansView()
+                case .me:
+                    SettingsView()
                 }
-            case .markets:
-                NavigationStack {
-                    MarketsView()
-                        .stockDestination(onTrade: { tradeRequest = $0 })
-                }
-            case .plans:
-                PlansView()
-            case .me:
-                SettingsView()
             }
-        }
-        .background(Palette.paper)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.paper)
+            // The + button rises above the bar; keep scroll content clear of it.
+            .safeAreaPadding(.bottom, BottomBar.addButtonOverhang)
             BottomBar(selection: $tab, onAdd: { tradeRequest = TradeRequest(kind: .buy) })
         }
+        .background(Palette.paper)
         // Keep the tab bar at the bottom while typing in Markets search.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .sheet(item: $tradeRequest) { request in
@@ -482,6 +488,8 @@ struct StockRow: View {
 // MARK: - Bottom bar
 
 private struct BottomBar: View {
+    static let addButtonOverhang: CGFloat = 17
+
     @Binding var selection: AppTab
     var onAdd: () -> Void
 
@@ -494,14 +502,14 @@ private struct BottomBar: View {
             item(.me)
         }
         .frame(height: 65)
-        .background(Palette.ink)
+        .background { Palette.ink.ignoresSafeArea(edges: .bottom) }
         .overlay(alignment: .top) {
             Button(action: onAdd) {
                 Image("add-investment")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("New practice order")
-            .offset(y: -17)
+            .offset(y: -Self.addButtonOverhang)
         }
     }
 
@@ -516,7 +524,7 @@ private struct BottomBar: View {
             .foregroundStyle(isSelected ? Palette.ink : Palette.muted)
             .padding(.top, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(isSelected ? Palette.lime : Palette.ink)
+            .background { (isSelected ? Palette.lime : Palette.ink).ignoresSafeArea(edges: .bottom) }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
