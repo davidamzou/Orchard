@@ -5,23 +5,35 @@
 //  Created by David Amouzou on 15/10/2026.
 //
 
+import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    @Bindable var document: OrchardDocument
-    @Environment(\.undoManager) private var undoManager
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     var body: some View {
-        TextEditor(text: $document.text)
-            .onChange(of: document.text) { oldValue, _ in
-                undoManager?.registerUndo(withTarget: document) { document in
-                    document.text = oldValue
-                }
-            }
-            .font(.system(size: 16, weight: .regular, design: .monospaced))
+        if hasOnboarded {
+            DashboardView()
+        } else {
+            WelcomeView { hasOnboarded = true }
+        }
+    }
+}
+
+extension View {
+    /// The mockups draw their own top chrome, so the system navigation bar stays hidden.
+    func hidesNavigationBar() -> some View {
+        #if os(iOS)
+        toolbarVisibility(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden()
+        #else
+        self
+        #endif
     }
 }
 
 #Preview {
-    ContentView(document: OrchardDocument())
+    ContentView()
+        .environment(MarketData())
+        .modelContainer(for: [Stock.self, Trade.self, PricePoint.self, PortfolioSnapshot.self, AutopilotPlan.self], inMemory: true)
 }

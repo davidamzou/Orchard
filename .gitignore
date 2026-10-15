@@ -1,0 +1,7 @@
+# Local secrets
+Secrets.xcconfig
+
+# Xcode
+xcuserdata/
+DerivedData/
+.DS_Store

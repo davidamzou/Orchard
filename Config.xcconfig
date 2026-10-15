@@ -1,0 +1,7 @@
+// Shared build settings for the Orchard app target.
+
+// Finnhub API key bundled into the app as a fallback when no key is saved in Me.
+// Put the real value in Secrets.xcconfig (git-ignored); see Secrets.example.xcconfig.
+FINNHUB_API_KEY =
+
+#include? "Secrets.xcconfig"
