@@ -26,7 +26,29 @@ final class MarketData {
     /// Last problem loading daily history, shown in Me.
     private(set) var historyError: String?
 
-    var hasHistoryKey: Bool { TiingoClient() != nil }
+    var hasHistoryKey: Bool {
+        _ = keyVersion
+        return TiingoClient() != nil
+    }
+
+    func setHistoryKey(_ key: String?) {
+        Keychain.set(key?.trimmingCharacters(in: .whitespacesAndNewlines), for: TiingoClient.keychainAccount)
+        keyVersion += 1
+        historyError = nil
+    }
+
+    /// Checks a Tiingo token without saving it.
+    func validateHistory(key: String) async -> String? {
+        guard let client = TiingoClient(apiKey: key.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return "Paste your Tiingo token."
+        }
+        do {
+            _ = try await client.dailyCloses("SPY", since: .now.addingTimeInterval(-7 * 86_400))
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
 
     /// What Autopilot did on the last refresh, shown on the Plans tab.
     private(set) var autopilotLog: [String] = []
@@ -39,11 +61,6 @@ final class MarketData {
         return FinnhubClient() != nil
     }
 
-    /// True when the user saved their own key rather than relying on the bundled one.
-    var hasSavedKey: Bool {
-        _ = keyVersion
-        return FinnhubClient.savedKey != nil
-    }
 
     func setAPIKey(_ key: String?) {
         Keychain.set(key?.trimmingCharacters(in: .whitespacesAndNewlines), for: FinnhubClient.keychainAccount)

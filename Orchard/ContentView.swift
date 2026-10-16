@@ -10,12 +10,23 @@ import SwiftUI
 
 struct ContentView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @Environment(MarketData.self) private var marketData
+    /// Once shown, setup stays up until the user moves on, so both keys can be entered.
+    @State private var isInSetup = false
+    /// Set when the user leaves setup; asked again at the next launch if keys are missing.
+    @State private var finishedSetup = false
 
     var body: some View {
-        if hasOnboarded {
-            DashboardView()
-        } else {
+        if !hasOnboarded {
             WelcomeView { hasOnboarded = true }
+        } else if isInSetup || (!marketData.hasKey && !finishedSetup) {
+            ConnectDataView {
+                isInSetup = false
+                finishedSetup = true
+            }
+            .onAppear { isInSetup = true }
+        } else {
+            DashboardView()
         }
     }
 }

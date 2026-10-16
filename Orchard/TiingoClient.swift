@@ -13,7 +13,7 @@ struct TiingoClient {
 
         var errorDescription: String? {
             switch self {
-            case .unauthorized: "Tiingo rejected the API key, so charts use Orchard's own price records."
+            case .unauthorized: "Tiingo rejected the token. Check it in Me."
             case .rateLimited: "Tiingo's hourly limit was reached. History will load later."
             case .unknownSymbol(let symbol): "Tiingo has no history for \(symbol)."
             case .http(let code): "Tiingo returned an error (\(code))."
@@ -29,14 +29,12 @@ struct TiingoClient {
     let apiKey: String
     var session: URLSession = .shared
 
-    /// Key baked in at build time from Secrets.xcconfig.
-    static var bundledKey: String? {
-        let key = Bundle.main.object(forInfoDictionaryKey: "TiingoAPIKey") as? String
-        guard let key, !key.isEmpty, !key.hasPrefix("$(") else { return nil }
-        return key
-    }
+    static let keychainAccount = "tiingo-api-token"
 
-    init?(apiKey: String? = TiingoClient.bundledKey) {
+    /// The token the user entered in Me, kept in the keychain.
+    static var savedKey: String? { Keychain.string(for: keychainAccount) }
+
+    init?(apiKey: String? = TiingoClient.savedKey) {
         guard let apiKey, !apiKey.isEmpty else { return nil }
         self.apiKey = apiKey
     }

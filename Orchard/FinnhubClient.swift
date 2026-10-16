@@ -13,7 +13,7 @@ struct FinnhubClient {
 
         var errorDescription: String? {
             switch self {
-            case .missingKey: "Add your Finnhub API key in Me to load live prices."
+            case .missingKey: "Add your Finnhub API key in Me to load live prices and trade."
             case .unauthorized: "Finnhub rejected the API key. Check it in Me."
             case .notAvailableOnPlan: "This data isn't included in your Finnhub plan."
             case .rateLimited: "Too many requests to Finnhub. Try again in a minute."
@@ -72,16 +72,10 @@ struct FinnhubClient {
     let apiKey: String
     var session: URLSession = .shared
 
-    /// Key baked in at build time from Secrets.xcconfig, used when none is saved in the keychain.
-    static var bundledKey: String? {
-        let key = Bundle.main.object(forInfoDictionaryKey: "FinnhubAPIKey") as? String
-        guard let key, !key.isEmpty, !key.hasPrefix("$(") else { return nil }
-        return key
-    }
-
+    /// The key the user entered in Me, kept in the keychain.
     static var savedKey: String? { Keychain.string(for: keychainAccount) }
 
-    init?(apiKey: String? = FinnhubClient.savedKey ?? FinnhubClient.bundledKey) {
+    init?(apiKey: String? = FinnhubClient.savedKey) {
         guard let apiKey, !apiKey.isEmpty else { return nil }
         self.apiKey = apiKey
     }
