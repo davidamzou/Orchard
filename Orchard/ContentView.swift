@@ -35,5 +35,5 @@ extension View {
 #Preview {
     ContentView()
         .environment(MarketData())
-        .modelContainer(for: [Stock.self, Trade.self, PricePoint.self, PortfolioSnapshot.self, AutopilotPlan.self], inMemory: true)
+        .modelContainer(for: [Stock.self, Trade.self, PricePoint.self, DailyClose.self, PortfolioSnapshot.self, AutopilotPlan.self], inMemory: true)
 }

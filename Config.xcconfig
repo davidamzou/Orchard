@@ -4,4 +4,7 @@
 // Put the real value in Secrets.xcconfig (git-ignored); see Secrets.example.xcconfig.
 FINNHUB_API_KEY =
 
+// Tiingo API key for daily price history (charts). Also set it in Secrets.xcconfig.
+TIINGO_API_KEY =
+
 #include? "Secrets.xcconfig"

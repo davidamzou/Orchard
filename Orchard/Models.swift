@@ -32,6 +32,9 @@ final class Stock {
 
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade] = []
     @Relationship(deleteRule: .cascade, inverse: \PricePoint.stock) var history: [PricePoint] = []
+    @Relationship(deleteRule: .cascade, inverse: \DailyClose.stock) var dailyCloses: [DailyClose] = []
+    /// When daily history was last fetched from Tiingo.
+    var dailyUpdatedAt: Date?
 
     init(ticker: String, name: String = "", exchange: String = "", currency: String = "USD", isWatched: Bool = false) {
         self.ticker = ticker.uppercased()
@@ -86,6 +89,19 @@ final class PricePoint {
     }
 }
 
+/// End-of-day closing price (split- and dividend-adjusted) from Tiingo, one per trading day.
+@Model
+final class DailyClose {
+    var date: Date
+    var close: Double
+    var stock: Stock?
+
+    init(date: Date, close: Double) {
+        self.date = date
+        self.close = close
+    }
+}
+
 /// Portfolio value, one row per day (latest refresh wins), for the dashboard chart.
 @Model
 final class PortfolioSnapshot {
@@ -133,6 +149,56 @@ enum Portfolio {
     static var startingCash: Double {
         let stored = UserDefaults.standard.double(forKey: startingCashKey)
         return stored > 0 ? stored : defaultStartingCash
+    }
+
+    /// Tiingo dates a daily bar at midnight UTC; the US close is at 16:00 New York time.
+    static func closeTime(of barDate: Date) -> Date {
+        barDate.addingTimeInterval(21 * 3600)
+    }
+
+    /// Value of the practice account over time: starting cash just before the first trade,
+    /// then every daily close since, then today with live prices.
+    static func valueHistory(stocks: [Stock], trades: [Trade], startingCash: Double,
+                             now: Date = .now) -> [(date: Date, value: Double)] {
+        let ordered = trades.sorted { $0.date < $1.date }
+        guard let first = ordered.first else { return [] }
+
+        // Closing prices per ticker, oldest first.
+        var closes: [String: [(date: Date, close: Double)]] = [:]
+        for stock in stocks {
+            closes[stock.ticker] = stock.dailyCloses
+                .map { (date: closeTime(of: $0.date), close: $0.close) }
+                .sorted { $0.date < $1.date }
+        }
+        let closeTimes = Set(closes.values.flatMap { $0.map(\.date) })
+            .filter { $0 > first.date && $0 < now }
+            .sorted()
+
+        var points: [(date: Date, value: Double)] = [(first.date.addingTimeInterval(-1), startingCash)]
+        for time in closeTimes {
+            var cash = startingCash
+            var shares: [String: Double] = [:]
+            for trade in ordered where trade.date <= time {
+                let ticker = trade.stock?.ticker ?? ""
+                let sign: Double = trade.kind == .buy ? 1 : -1
+                shares[ticker, default: 0] += sign * trade.shares
+                cash -= sign * trade.shares * trade.price + trade.fees
+            }
+            var value = cash
+            for (ticker, count) in shares where count > 0 {
+                // Latest close on or before this day; skip the day if a holding has none yet.
+                guard let close = closes[ticker]?.last(where: { $0.date <= time })?.close else { value = .nan; break }
+                value += count * close
+            }
+            if value.isFinite { points.append((time, value)) }
+        }
+
+        let holdings = stocks.reduce(0) { total, stock in
+            let position = stock.position()
+            return total + position.shares * stock.markPrice(for: position)
+        }
+        points.append((now, cash(startingCash: startingCash, trades: trades) + holdings))
+        return points
     }
 
     /// Cash left after every trade so far.
@@ -200,6 +266,28 @@ extension Stock {
     }
 
     var sortedHistory: [PricePoint] { history.sorted { $0.date < $1.date } }
+
+    /// Prices to chart for a range: Orchard's own intraday records for 1D, Tiingo's
+    /// daily closes otherwise (falling back to the intraday records), ending on the live price.
+    @MainActor
+    func chartSeries(for range: TimeRange, now: Date = .now) -> [(date: Date, value: Double)] {
+        let intraday = sortedHistory.map { (date: $0.date, value: $0.price) }
+        if range == .day {
+            guard let latest = intraday.last?.date else { return [] }
+            return intraday.filter { latest.timeIntervalSince($0.date) <= 86_400 }
+        }
+        let closes = dailyCloses
+            .map { (date: Portfolio.closeTime(of: $0.date), value: $0.close) }
+            .filter { $0.date >= range.start }
+            .sorted { $0.date < $1.date }
+        guard !closes.isEmpty else { return intraday.filter { $0.date >= range.start } }
+        var series = closes
+        let updated = quoteUpdatedAt ?? now
+        if let price, let last = series.last, updated > last.date {
+            series.append((date: updated, value: price))
+        }
+        return series
+    }
 }
 
 extension Double {

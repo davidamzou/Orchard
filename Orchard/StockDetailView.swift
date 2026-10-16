@@ -41,7 +41,10 @@ struct StockDetailView: View {
             .ignoresSafeArea()
         }
         .hidesNavigationBar()
-        .task { await marketData.refresh([stock], in: context) }
+        .task {
+            await marketData.refresh([stock], in: context)
+            await marketData.loadHistory(for: stock, in: context)
+        }
     }
 
     // MARK: Overview
@@ -128,13 +131,15 @@ struct StockDetailView: View {
     private var priceHistory: some View {
         VStack(spacing: 0) {
             AreaLineChart(
-                points: stock.sortedHistory
-                    .filter { $0.date >= range.start }
-                    .map { .init(date: $0.date, value: $0.price) },
+                points: stock.chartSeries(for: range),
                 fill: Palette.limeBorder.opacity(0.45),
                 line: Palette.ink,
                 showsMarker: true,
-                emptyMessage: "Orchard records a price each time you check in. The chart fills in as you keep tracking."
+                emptyMessage: range == .day
+                    ? "Today's curve builds up minute by minute while the market is open."
+                    : marketData.hasHistoryKey
+                        ? "Loading price history…"
+                        : "Add a Tiingo key to see past prices. Until then Orchard charts the prices it records."
             )
             .frame(height: 130)
             .padding(.top, 12)

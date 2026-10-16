@@ -9,13 +9,13 @@ import SwiftUI
 
 /// Mini price line for list rows.
 struct Sparkline: View {
-    let points: [PricePoint]
+    let points: [(date: Date, value: Double)]
 
     var body: some View {
-        let recent = Array(points.suffix(30))
-        let isUp = (recent.last?.price ?? 0) >= (recent.first?.price ?? 0)
+        let recent = points.suffix(30).map { AreaLineChart.Point(date: $0.date, value: $0.value) }
+        let isUp = (recent.last?.value ?? 0) >= (recent.first?.value ?? 0)
         Chart(recent) { point in
-            LineMark(x: .value("Date", point.date), y: .value("Price", point.price))
+            LineMark(x: .value("Date", point.date), y: .value("Price", point.value))
                 .interpolationMethod(.linear)
                 .lineStyle(StrokeStyle(lineWidth: 1.2))
         }
@@ -39,6 +39,15 @@ struct AreaLineChart: View {
 
     let points: [Point]
     var fill: Color
+
+    init(points: [(date: Date, value: Double)], fill: Color, line: Color, showsMarker: Bool = false, emptyMessage: String) {
+        self.points = points.map { Point(date: $0.date, value: $0.value) }
+        self.fill = fill
+        self.line = line
+        self.showsMarker = showsMarker
+        self.emptyMessage = emptyMessage
+    }
+
     var line: Color
     var showsMarker = false
     var emptyMessage: String

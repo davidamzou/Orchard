@@ -18,6 +18,6 @@ struct OrchardApp: App {
                 .environment(marketData)
                 .environment(\.locale, .app)
         }
-        .modelContainer(for: [Stock.self, Trade.self, PricePoint.self, PortfolioSnapshot.self, AutopilotPlan.self])
+        .modelContainer(for: [Stock.self, Trade.self, PricePoint.self, DailyClose.self, PortfolioSnapshot.self, AutopilotPlan.self])
     }
 }

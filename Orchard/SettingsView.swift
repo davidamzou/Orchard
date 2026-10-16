@@ -77,6 +77,14 @@ struct SettingsView: View {
                      : "Connected to Finnhub with the built-in key")
                     .font(.inter(13, weight: .medium))
             }
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(marketData.hasHistoryKey && marketData.historyError == nil ? Palette.gain : Palette.loss)
+                    .frame(width: 8, height: 8)
+                Text(marketData.historyError
+                     ?? (marketData.hasHistoryKey ? "Price history from Tiingo" : "No Tiingo key: charts use Orchard's own records"))
+                    .font(.inter(13, weight: .medium))
+            }
             Text("Orchard gets prices from Finnhub. Create a free key at finnhub.io, then paste it here. It's stored in your device's keychain.")
                 .font(.inter(12))
                 .foregroundStyle(Palette.muted)

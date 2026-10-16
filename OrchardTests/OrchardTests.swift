@@ -14,7 +14,7 @@ import Testing
 struct PositionTests {
     private func makeStock() throws -> (Stock, ModelContext) {
         let container = try ModelContainer(
-            for: Stock.self, Trade.self, PricePoint.self, PortfolioSnapshot.self, AutopilotPlan.self,
+            for: Stock.self, Trade.self, PricePoint.self, DailyClose.self, PortfolioSnapshot.self, AutopilotPlan.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = ModelContext(container)
@@ -117,6 +117,27 @@ struct PracticePortfolioTests {
         #expect(days.allSatisfy { $0.day == 15 })
     }
 
+    @Test func valueHistoryFollowsDailyCloses() throws {
+        let container = try ModelContainer(
+            for: Stock.self, Trade.self, PricePoint.self, DailyClose.self, PortfolioSnapshot.self, AutopilotPlan.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let stock = Stock(ticker: "VOO")
+        context.insert(stock)
+        let day1 = Date(timeIntervalSince1970: 1_800_000_000 - 1_800_000_000.truncatingRemainder(dividingBy: 86_400))
+        let day2 = day1.addingTimeInterval(86_400)
+        stock.dailyCloses = [DailyClose(date: day1, close: 100), DailyClose(date: day2, close: 110)]
+        // Bought 10 shares at 100 during day 1, before its close.
+        stock.trades.append(Trade(kind: .buy, shares: 10, price: 100, date: day1.addingTimeInterval(15 * 3600), account: "Manual"))
+        stock.price = 120
+
+        let now = day2.addingTimeInterval(30 * 3600)
+        let history = Portfolio.valueHistory(stocks: [stock], trades: stock.trades, startingCash: 10_000, now: now)
+        #expect(history.map(\.value) == [10_000, 10_000, 10_100, 10_200])
+        #expect(history.last?.date == now)
+    }
+
     @Test func autopilotDoesNotRepeatAfterLastRun() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -142,6 +163,12 @@ struct FormattingTests {
         #expect(1_860.0.compactMoney == "$1.9k")
         #expect(950.0.compactMoney == "$950")
         #expect(2_500_000.0.compactMoney == "$2.5M")
+    }
+
+    @Test func historyKeepsOnePointPerFiveMinutes() {
+        let base = Date(timeIntervalSince1970: 1_800_000_000 - 1_800_000_000.truncatingRemainder(dividingBy: 300))
+        #expect(MarketData.historyBucket(base) == MarketData.historyBucket(base.addingTimeInterval(299)))
+        #expect(MarketData.historyBucket(base) != MarketData.historyBucket(base.addingTimeInterval(300)))
     }
 
     @Test func exchangeNamesAreShortened() {

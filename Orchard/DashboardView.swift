@@ -41,6 +41,7 @@ struct DashboardView: View {
     @Environment(\.modelContext) private var context
     @State private var tab: AppTab = .home
     @State private var tradeRequest: TradeRequest?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // The bar sits below the content rather than over it, so every tab's
@@ -76,8 +77,13 @@ struct DashboardView: View {
         .sheet(item: $tradeRequest) { request in
             TradeSheet(request: request)
         }
-        .task {
-            await marketData.refreshAll(in: context, minimumInterval: 300)
+        // Keep prices live while the app is in front; stop in the background.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await marketData.refreshAll(in: context, minimumInterval: MarketData.refreshInterval - 5)
+                try? await Task.sleep(for: .seconds(MarketData.refreshInterval))
+            }
         }
     }
 }
@@ -285,10 +291,12 @@ private struct HomeView: View {
                 .padding(.top, 8)
 
             AreaLineChart(
-                points: snapshots.map { .init(date: $0.day, value: $0.value) },
+                points: trades.isEmpty
+                    ? snapshots.map { (date: $0.day, value: $0.value) }
+                    : Portfolio.valueHistory(stocks: stocks, trades: trades, startingCash: startingCash),
                 fill: Palette.lavender.opacity(0.55),
                 line: Palette.ink,
-                emptyMessage: "Your growth curve appears after a second day of tracking."
+                emptyMessage: "Your portfolio curve appears after your first trade."
             )
             .frame(height: 104)
             .padding(.top, 7)
@@ -459,7 +467,7 @@ struct StockRow: View {
                 }
                 .frame(maxWidth: 136, alignment: .leading)
                 Spacer(minLength: 0)
-                Sparkline(points: stock.sortedHistory)
+                Sparkline(points: stock.chartSeries(for: .month))
                 VStack(alignment: .trailing, spacing: 5) {
                     Text(value)
                         .font(.inter(12, weight: .semibold, relativeTo: .callout))

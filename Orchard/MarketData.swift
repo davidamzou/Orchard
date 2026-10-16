@@ -9,9 +9,25 @@ import SwiftData
 /// Pulls quotes and fundamentals from Finnhub into the SwiftData store.
 @Observable
 final class MarketData {
+    /// Seconds between automatic refreshes. Finnhub's free plan allows 60 calls a minute,
+    /// so this leaves room for a few dozen followed stocks.
+    static let refreshInterval: TimeInterval = 60
+    /// Tiingo's free plan allows 50 requests an hour; each refresh loads at most this many histories.
+    static let historyFetchesPerRefresh = 5
+    /// Years of daily history loaded the first time a stock is opened.
+    static let historyYears = 5
+
+    /// Price points closer together than this are merged, to keep history small.
+    static let historyResolution: TimeInterval = 5 * 60
+
     private(set) var isRefreshing = false
     private(set) var lastRefresh: Date?
     var lastError: String?
+    /// Last problem loading daily history, shown in Me.
+    private(set) var historyError: String?
+
+    var hasHistoryKey: Bool { TiingoClient() != nil }
+
     /// What Autopilot did on the last refresh, shown on the Plans tab.
     private(set) var autopilotLog: [String] = []
 
@@ -60,6 +76,41 @@ final class MarketData {
         let stocks = (try? context.fetch(FetchDescriptor<Stock>())) ?? []
         await refresh(stocks, in: context)
         runAutopilot(in: context)
+
+        // Held stocks first, then the watchlist; each needs at most one fetch a day.
+        let needingHistory = stocks
+            .filter { Self.needsHistory($0) && ($0.position().shares > 0 || $0.isWatched) }
+            .sorted { ($0.position().shares > 0 ? 0 : 1) < ($1.position().shares > 0 ? 0 : 1) }
+        for stock in needingHistory.prefix(Self.historyFetchesPerRefresh) {
+            await loadHistory(for: stock, in: context)
+        }
+    }
+
+    static func needsHistory(_ stock: Stock, now: Date = .now) -> Bool {
+        guard let updated = stock.dailyUpdatedAt else { return true }
+        return !Calendar.current.isDate(updated, inSameDayAs: now)
+    }
+
+    /// Loads daily closes from Tiingo: five years the first time, then only the new days.
+    func loadHistory(for stock: Stock, in context: ModelContext) async {
+        guard let client = TiingoClient(), Self.needsHistory(stock) else { return }
+        let last = stock.dailyCloses.map(\.date).max()
+        let start = last?.addingTimeInterval(86_400)
+            ?? Calendar.current.date(byAdding: .year, value: -Self.historyYears, to: .now)!
+        do {
+            let bars = try await client.dailyCloses(stock.ticker, since: start)
+            let known = Set(stock.dailyCloses.map(\.date))
+            for bar in bars where !known.contains(bar.date) {
+                stock.dailyCloses.append(DailyClose(date: bar.date, close: bar.adjClose))
+            }
+            stock.dailyUpdatedAt = .now
+            historyError = nil
+            try? context.save()
+        } catch TiingoClient.Failure.unknownSymbol {
+            stock.dailyUpdatedAt = .now   // don't retry until tomorrow
+        } catch {
+            historyError = error.localizedDescription
+        }
     }
 
     /// Fetches a fresh quote for an order. Throws when no price can be had.
@@ -102,10 +153,17 @@ final class MarketData {
         stock.previousClose = quote.pc
         stock.quoteUpdatedAt = Date(timeIntervalSince1970: quote.t)
 
-        // Finnhub's free plan has no price history, so the app builds its own.
+        // Finnhub's free plan has no price history, so the app builds its own,
+        // one point per quote time (several minutes apart at most).
+        let quoteTime = Date(timeIntervalSince1970: quote.t)
         let last = stock.history.max { $0.date < $1.date }
-        if last == nil || last!.price != quote.c || Date.now.timeIntervalSince(last!.date) > 6 * 3600 {
-            stock.history.append(PricePoint(date: .now, price: quote.c))
+        if let last, quoteTime <= last.date {
+            // Same quote as last time (market closed): nothing new.
+        } else if let last, Self.historyBucket(quoteTime) == Self.historyBucket(last.date) {
+            last.date = quoteTime
+            last.price = quote.c
+        } else {
+            stock.history.append(PricePoint(date: quoteTime, price: quote.c))
         }
 
         let isStale = stock.fundamentalsUpdatedAt.map { Date.now.timeIntervalSince($0) > 86_400 } ?? true
@@ -204,6 +262,11 @@ final class MarketData {
         } else {
             context.insert(PortfolioSnapshot(day: day, value: value))
         }
+    }
+
+    /// Index of the fixed 5-minute window a date falls in; one price point is kept per window.
+    static func historyBucket(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970 / historyResolution)
     }
 
     /// "NASDAQ NMS - GLOBAL MARKET" → "NASDAQ", "NEW YORK STOCK EXCHANGE, INC." → "NYSE".
